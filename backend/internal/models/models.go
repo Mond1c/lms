@@ -55,6 +55,7 @@ type Assignment struct {
 	TemplateRepo string    `json:"template_repo"`
 	Deadline     time.Time `json:"deadline"`
 	MaxPoints    int       `json:"max_points"`
+	AcademicYear int       `json:"academic_year"`
 
 	Submissions []Submission `json:"submissions,omitempty"`
 }

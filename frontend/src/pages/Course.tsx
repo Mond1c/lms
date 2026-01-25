@@ -29,6 +29,7 @@ const CoursePage: Component = () => {
     template_repo: '',
     deadline: '',
     max_points: 100,
+    academic_year: new Date().getFullYear(),
   });
 
   const handleCreateAssignment = async (e: Event) => {
@@ -43,6 +44,7 @@ const CoursePage: Component = () => {
       template_repo: '',
       deadline: '',
       max_points: 100,
+      academic_year: new Date().getFullYear(),
     });
     refetchAssignments();
   };
@@ -184,6 +186,23 @@ const CoursePage: Component = () => {
                         min="1"
                       />
                     </div>
+                    <div class="mb-4">
+                      <label class="block text-sm font-medium mb-1">Academic Year</label>
+                      <input
+                        type="number"
+                        value={formData().academic_year}
+                        onInput={(e) =>
+                          setFormData({
+                            ...formData(),
+                            academic_year: parseInt(e.currentTarget.value),
+                          })
+                        }
+                        class="w-full border rounded px-3 py-2"
+                        min="2020"
+                        max="2100"
+                        required
+                      />
+                    </div>
                     <div class="flex justify-end gap-2">
                       <button
                         type="button"
@@ -233,6 +252,9 @@ const CoursePage: Component = () => {
                             </div>
                             <div class="text-blue-600 font-medium">
                               {assignment.max_points} points
+                            </div>
+                            <div class="text-gray-400 text-xs">
+                              Year: {assignment.academic_year}
                             </div>
                           </div>
                         </div>

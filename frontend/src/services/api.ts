@@ -48,6 +48,7 @@ export interface Assignment {
   template_repo: string;
   deadline: string;
   max_points: number;
+  academic_year: number;
   submissions?: Submission[];
   course?: Course;
 }
@@ -102,6 +103,7 @@ export const assignmentAPI = {
       template_repo: string;
       deadline: string;
       max_points: number;
+      academic_year: number;
     }
   ) => api.post<Assignment>(`/courses/${courseSlug}/assignments`, data),
   update: (
@@ -112,6 +114,7 @@ export const assignmentAPI = {
       template_repo: string;
       deadline: string;
       max_points: number;
+      academic_year: number;
     }>
   ) => api.put<Assignment>(`/assignments/${id}`, data),
   delete: (id: number) => api.delete(`/assignments/${id}`),

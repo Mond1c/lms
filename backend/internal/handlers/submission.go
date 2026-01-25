@@ -100,6 +100,14 @@ func (h *SubmissionHandler) Accept(c echo.Context) error {
 
 	giteaService.AddCollaborator(assignment.Course.OrgName, repoName, user.Username, gitea.AccessModeWrite)
 
+	if assignment.AcademicYear > 0 {
+		teamName := fmt.Sprintf("%d-%s-instructors", assignment.AcademicYear, assignment.Course.Slug)
+		team, err := giteaService.GetTeamByName(assignment.Course.OrgName, teamName)
+		if err == nil && team != nil {
+			giteaService.AddTeamRepository(team.ID, assignment.Course.OrgName, repoName)
+		}
+	}
+
 	go func() {
 		giteaService.SetupFeedbackBranch(assignment.Course.OrgName, repoName)
 	}()

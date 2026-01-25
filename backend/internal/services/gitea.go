@@ -191,3 +191,47 @@ func (s *GiteaService) SetupFeedbackBranch(owner, repo string) error {
 	)
 	return err
 }
+
+func (s *GiteaService) GetTeamByName(orgName, teamName string) (*gitea.Team, error) {
+	teams, _, err := s.client.ListOrgTeams(orgName, gitea.ListTeamsOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	for _, team := range teams {
+		if team.Name == teamName {
+			return team, nil
+		}
+	}
+
+	return nil, nil
+}
+
+func (s *GiteaService) GetOrCreateInstructorTeam(orgName, courseSlug string, year int, creatorUsername string) (*gitea.Team, error) {
+	teamName := fmt.Sprintf("%d-%s-instructors", year, courseSlug)
+
+	team, err := s.GetTeamByName(orgName, teamName)
+	if err != nil {
+		return nil, err
+	}
+
+	if team != nil {
+		return team, nil
+	}
+
+	team, err = s.CreateTeam(
+		orgName,
+		teamName,
+		fmt.Sprintf("Instructors for %s (%d)", courseSlug, year),
+		gitea.AccessModeWrite,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	if creatorUsername != "" {
+		s.AddTeamMember(team.ID, creatorUsername)
+	}
+
+	return team, nil
+}
