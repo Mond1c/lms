@@ -1,0 +1,80 @@
+package main
+
+import (
+	"log"
+
+	"github.com/Mond1c/gitea-classroom/config"
+	"github.com/Mond1c/gitea-classroom/internal/database"
+	"github.com/Mond1c/gitea-classroom/internal/handlers"
+	mw "github.com/Mond1c/gitea-classroom/internal/middleware"
+	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
+)
+
+func main() {
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatal("Failed to load config:", err)
+	}
+
+	if err := database.Connect(cfg.DatabaseURL); err != nil {
+		log.Fatal("Failed to connect to database:", err)
+	}
+
+	if err := database.Migrate(); err != nil {
+		log.Fatal("Failed to migrate database:", err)
+	}
+
+	e := echo.New()
+
+	e.Use(middleware.RequestLogger())
+	e.Use(middleware.Recover())
+	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
+		AllowOrigins: []string{cfg.FrontendURL},
+		AllowMethods: []string{echo.GET, echo.POST, echo.PUT, echo.DELETE},
+		AllowHeaders: []string{echo.HeaderOrigin, echo.HeaderContentType, echo.HeaderAccept, echo.HeaderAuthorization},
+	}))
+
+	authHandler := handlers.NewAuthHandler(cfg)
+	courseHandler := handlers.NewCourseHandler(cfg)
+	assignmentHandler := handlers.NewAssignmentHandler(cfg)
+	studentHandler := handlers.NewStudentHandler(cfg)
+	submissionHandler := handlers.NewSubmissionHandler(cfg)
+
+	e.GET("/api/health", func(c echo.Context) error {
+		return c.JSON(200, map[string]string{"status": "ok"})
+	})
+	e.GET("/api/auth/login", authHandler.Login)
+	e.GET("/api/auth/callback", authHandler.Callback)
+	e.GET("/api/invite/:code", courseHandler.GetByInviteCode)
+
+	api := e.Group("/api")
+	api.Use(mw.AuthMiddleware(cfg.JWTSecret))
+
+	api.GET("/auth/me", authHandler.Me)
+
+	api.POST("/courses", courseHandler.Create)
+	api.GET("/courses", courseHandler.List)
+	api.GET("/courses/enrolled", courseHandler.ListEnrolled)
+	api.GET("/courses/:slug", courseHandler.Get)
+	api.POST("/courses/:slug/regenerate-invite", courseHandler.RegenerateInviteCode)
+
+	api.GET("/courses/:slug/assignments", assignmentHandler.List)
+	api.POST("/courses/:slug/assignments", assignmentHandler.Create)
+	api.GET("/assignments/:id", assignmentHandler.Get)
+	api.PUT("/assignments/:id", assignmentHandler.Update)
+	api.DELETE("/assignments/:id", assignmentHandler.Delete)
+
+	api.GET("/courses/:slug/students", studentHandler.List)
+	api.POST("/courses/:slug/enroll", studentHandler.Enroll)
+	api.GET("/students/:id", studentHandler.Get)
+	api.DELETE("/students/:id", studentHandler.Remove)
+
+	api.POST("/assignments/:id/accept", submissionHandler.Accept)
+	api.GET("/assignments/:id/submissions", submissionHandler.List)
+	api.GET("/submissions/:submissionId", submissionHandler.Get)
+	api.POST("/submissions/:submissionId/grade", submissionHandler.Grade)
+
+	log.Printf("Server starting on port %s", cfg.Port)
+	e.Logger.Fatal(e.Start(":" + cfg.Port))
+}
