@@ -7,6 +7,7 @@ import (
 	"github.com/Mond1c/gitea-classroom/config"
 	"github.com/Mond1c/gitea-classroom/internal/database"
 	"github.com/Mond1c/gitea-classroom/internal/models"
+	"github.com/Mond1c/gitea-classroom/internal/services"
 	"github.com/labstack/echo/v4"
 )
 
@@ -24,6 +25,7 @@ type CreateAssignmentRequest struct {
 	TemplateRepo string `json:"template_repo"`
 	Deadline     string `json:"deadline" validate:"required"`
 	MaxPoints    int    `json:"max_points"`
+	AcademicYear int    `json:"academic_year" validate:"required"`
 }
 
 func (h *AssignmentHandler) Create(c echo.Context) error {
@@ -44,12 +46,32 @@ func (h *AssignmentHandler) Create(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request")
 	}
 
+	if req.AcademicYear == 0 {
+		return echo.NewHTTPError(http.StatusBadRequest, "academic_year is required")
+	}
+
+	var user models.User
+	if err := database.DB.First(&user, userID).Error; err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get user")
+	}
+
+	giteaService, err := services.NewGiteaService(h.cfg.GiteaURL, user.AccessToken)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to initialize gitea service")
+	}
+
+	_, err = giteaService.GetOrCreateInstructorTeam(course.OrgName, course.Slug, req.AcademicYear, user.Username)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to create instructor team")
+	}
+
 	assignment := models.Assignment{
 		CourseID:     course.ID,
 		Title:        req.Title,
 		Description:  req.Description,
 		TemplateRepo: req.TemplateRepo,
 		MaxPoints:    req.MaxPoints,
+		AcademicYear: req.AcademicYear,
 	}
 
 	if req.Deadline != "" {
@@ -98,6 +120,7 @@ type UpdateAssignmentRequest struct {
 	TemplateRepo string `json:"template_repo"`
 	Deadline     string `json:"deadline"`
 	MaxPoints    int    `json:"max_points"`
+	AcademicYear int    `json:"academic_year"`
 }
 
 func (h *AssignmentHandler) Update(c echo.Context) error {
@@ -132,6 +155,9 @@ func (h *AssignmentHandler) Update(c echo.Context) error {
 	}
 	if req.MaxPoints > 0 {
 		assignment.MaxPoints = req.MaxPoints
+	}
+	if req.AcademicYear > 0 {
+		assignment.AcademicYear = req.AcademicYear
 	}
 	if req.Deadline != "" {
 		deadline, err := parseDateTime(req.Deadline)
