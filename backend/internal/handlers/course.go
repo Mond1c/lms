@@ -3,13 +3,13 @@ package handlers
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"net/http"
 	"strings"
 
 	"github.com/Mond1c/gitea-classroom/config"
 	"github.com/Mond1c/gitea-classroom/internal/database"
 	"github.com/Mond1c/gitea-classroom/internal/models"
-	"github.com/Mond1c/gitea-classroom/internal/services"
 	"github.com/labstack/echo/v4"
 )
 
@@ -22,8 +22,10 @@ func NewCourseHandler(cfg *config.Config) *CourseHandler {
 }
 
 type CreateCourseRequest struct {
-	Name        string `json:"name" validate:"required"`
-	Description string `json:"description"`
+	Name         string `json:"name" validate:"required"`
+	Description  string `json:"description"`
+	OrgName      string `json:"org_name" validate:"required"`
+	AcademicYear int    `json:"academic_year" validate:"required"`
 }
 
 func (h *CourseHandler) Create(c echo.Context) error {
@@ -43,27 +45,20 @@ func (h *CourseHandler) Create(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request")
 	}
 
-	slug := strings.ToLower(strings.ReplaceAll(req.Name, " ", "-"))
-
-	giteaService, err := services.NewGiteaService(h.cfg.GiteaURL, user.AccessToken)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to initialize gitea service")
-	}
-
-	org, err := giteaService.CreateOrganization(slug, req.Description)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to create organization")
-	}
+	// Create slug with academic year to ensure uniqueness
+	baseName := strings.ToLower(strings.ReplaceAll(req.Name, " ", "-"))
+	slug := fmt.Sprintf("%s-%d", baseName, req.AcademicYear)
 
 	inviteCode := generateInviteCode()
 
 	course := models.Course{
-		Name:        req.Name,
-		Description: req.Description,
-		Slug:        slug,
-		OrgName:     org.UserName,
-		InviteCode:  inviteCode,
-		Instructors: []models.User{user},
+		Name:         req.Name,
+		Description:  req.Description,
+		Slug:         slug,
+		OrgName:      req.OrgName,
+		AcademicYear: req.AcademicYear,
+		InviteCode:   inviteCode,
+		Instructors:  []models.User{user},
 	}
 
 	if err := database.DB.Create(&course).Error; err != nil {

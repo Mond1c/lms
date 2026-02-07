@@ -30,11 +30,12 @@ type Course struct {
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
 
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Slug        string `gorm:"uniqueIndex" json:"slug"`
-	OrgName     string `json:"org_name"`
-	InviteCode  string `gorm:"uniqueIndex" json:"invite_code"`
+	Name         string `json:"name"`
+	Description  string `json:"description"`
+	Slug         string `gorm:"uniqueIndex" json:"slug"`
+	OrgName      string `json:"org_name"`
+	AcademicYear int    `json:"academic_year"`
+	InviteCode   string `gorm:"uniqueIndex" json:"invite_code"`
 
 	Instructors []User       `gorm:"many2many:course_instructors;" json:"instructors,omitempty"`
 	Assignments []Assignment `json:"assignments,omitempty"`
@@ -128,9 +129,9 @@ type StudentInvite struct {
 	CourseID uint   `json:"course_id"`
 	Course   Course `json:"course,omitempty"`
 
-	FullName string `json:"full_name"`
-	Token    string `gorm:"uniqueIndex" json:"token"`
-	Used     bool   `gorm:"default:false" json:"used"`
+	FullName string  `json:"full_name"`
+	Token    *string `gorm:"uniqueIndex" json:"token,omitempty"`
+	Used     bool    `gorm:"default:false" json:"used"`
 	UsedAt   *time.Time `json:"used_at,omitempty"`
 
 	// Will be filled when student registers

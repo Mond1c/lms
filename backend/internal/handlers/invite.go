@@ -103,7 +103,7 @@ func (h *InviteHandler) ImportStudents(c echo.Context) error {
 		invite := models.StudentInvite{
 			CourseID: course.ID,
 			FullName: fullName,
-			Token:    "", // No personal token needed
+			Token:    nil, // No personal token needed
 			Used:     false,
 		}
 

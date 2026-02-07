@@ -7,6 +7,8 @@ const CreateCourse: Component = () => {
   const navigate = useNavigate();
   const [name, setName] = createSignal('');
   const [description, setDescription] = createSignal('');
+  const [orgName, setOrgName] = createSignal('');
+  const [academicYear, setAcademicYear] = createSignal(new Date().getFullYear());
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal('');
 
@@ -25,6 +27,8 @@ const CreateCourse: Component = () => {
       const response = await courseAPI.create({
         name: name(),
         description: description(),
+        org_name: orgName(),
+        academic_year: academicYear(),
       });
       navigate(`/courses/${response.data.slug}`);
     } catch (err: any) {
@@ -63,6 +67,39 @@ const CreateCourse: Component = () => {
             class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             rows="4"
             placeholder="Learn the fundamentals of programming..."
+          />
+        </div>
+
+        <div class="mb-6">
+          <label class="block text-gray-700 font-bold mb-2">
+            Organization Name (Gitea)
+          </label>
+          <input
+            type="text"
+            value={orgName()}
+            onInput={(e) => setOrgName(e.currentTarget.value)}
+            class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="my-organization"
+            required
+          />
+          <p class="text-sm text-gray-600 mt-1">
+            Название существующей организации в Gitea
+          </p>
+        </div>
+
+        <div class="mb-6">
+          <label class="block text-gray-700 font-bold mb-2">
+            Academic Year
+          </label>
+          <input
+            type="number"
+            value={academicYear()}
+            onInput={(e) => setAcademicYear(parseInt(e.currentTarget.value))}
+            class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="2024"
+            required
+            min="2000"
+            max="2100"
           />
         </div>
 

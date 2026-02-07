@@ -12,7 +12,6 @@ import Dashboard from './pages/Dashboard';
 import CreateCourse from './pages/CreateCourse';
 import Course from './pages/Course';
 import Assignment from './pages/Assignment';
-import JoinCourse from './pages/JoinCourse';
 import Students from './pages/Students';
 import AcceptAssignment from './pages/AcceptAssignment';
 import ImportStudents from './pages/ImportStudents';

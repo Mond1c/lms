@@ -32,6 +32,7 @@ export interface Course {
   description: string;
   slug: string;
   org_name: string;
+  academic_year: number;
   invite_code: string;
   created_at: string;
   is_instructor?: boolean;
@@ -84,8 +85,12 @@ export const courseAPI = {
   list: () => api.get<Course[]>('/courses'),
   listEnrolled: () => api.get<Course[]>('/courses/enrolled'),
   get: (slug: string) => api.get<Course>(`/courses/${slug}`),
-  create: (data: { name: string; description: string }) =>
-    api.post<Course>('/courses', data),
+  create: (data: {
+    name: string;
+    description: string;
+    org_name: string;
+    academic_year: number;
+  }) => api.post<Course>('/courses', data),
   getByInviteCode: (code: string) => api.get<Course>(`/invite/${code}`),
   regenerateInviteCode: (slug: string) =>
     api.post<{ invite_code: string }>(`/courses/${slug}/regenerate-invite`),
