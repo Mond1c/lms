@@ -63,6 +63,7 @@ func main() {
 	submissionHandler := handlers.NewSubmissionHandler(cfg)
 	reviewHandler := handlers.NewReviewHandler(cfg, reviewCache, sheetsService)
 	webhookHandler := handlers.NewWebhookHandler(cfg, reviewCache, sheetsService)
+	inviteHandler := handlers.NewInviteHandler(cfg)
 
 	e.GET("/api/health", func(c echo.Context) error {
 		return c.JSON(200, map[string]string{"status": "ok"})
@@ -71,6 +72,10 @@ func main() {
 	e.GET("/api/auth/callback", authHandler.Callback)
 	e.GET("/api/invite/:code", courseHandler.GetByInviteCode)
 	e.POST("/api/webhooks/gitea", webhookHandler.HandleGiteaWebhook)
+
+	// Public invite endpoints (no auth required)
+	e.GET("/api/join/:code", inviteHandler.GetAvailableStudents)
+	e.POST("/api/join/:code/register", inviteHandler.RegisterStudent)
 
 	api := e.Group("/api")
 	api.Use(mw.AuthMiddleware(cfg.JWTSecret))
@@ -93,6 +98,10 @@ func main() {
 	api.POST("/courses/:slug/enroll", studentHandler.Enroll)
 	api.GET("/students/:id", studentHandler.Get)
 	api.DELETE("/students/:id", studentHandler.Remove)
+
+	// Student invite management
+	api.POST("/courses/:slug/students/import", inviteHandler.ImportStudents)
+	api.GET("/courses/:slug/invites", inviteHandler.ListInvites)
 
 	api.POST("/assignments/:id/accept", submissionHandler.Accept)
 	api.GET("/assignments/:id/submissions", submissionHandler.List)

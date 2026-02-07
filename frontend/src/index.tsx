@@ -15,6 +15,8 @@ import Assignment from './pages/Assignment';
 import JoinCourse from './pages/JoinCourse';
 import Students from './pages/Students';
 import AcceptAssignment from './pages/AcceptAssignment';
+import ImportStudents from './pages/ImportStudents';
+import StudentRegistration from './pages/StudentRegistration';
 
 const root = document.getElementById('root');
 
@@ -42,8 +44,9 @@ render(
       <Route path="/courses/create" component={CreateCourse} />
       <Route path="/courses/:slug" component={Course} />
       <Route path="/courses/:slug/students" component={Students} />
+      <Route path="/courses/:slug/students/import" component={ImportStudents} />
       <Route path="/assignments/:id" component={Assignment} />
-      <Route path="/join/:code" component={JoinCourse} />
+      <Route path="/join/:code" component={StudentRegistration} />
       <Route path="/accept/:id" component={AcceptAssignment} />
     </Router>
   ),
