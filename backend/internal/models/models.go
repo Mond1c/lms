@@ -118,3 +118,22 @@ type ReviewRequest struct {
 	ReviewedAt  *time.Time `json:"reviewed_at"`
 	SheetRowID  int        `json:"sheet_row_id"`
 }
+
+type StudentInvite struct {
+	ID        uint           `gorm:"primarykey" json:"id"`
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
+
+	CourseID uint   `json:"course_id"`
+	Course   Course `json:"course,omitempty"`
+
+	FullName string `json:"full_name"`
+	Token    string `gorm:"uniqueIndex" json:"token"`
+	Used     bool   `gorm:"default:false" json:"used"`
+	UsedAt   *time.Time `json:"used_at,omitempty"`
+
+	// Will be filled when student registers
+	StudentID *uint   `json:"student_id,omitempty"`
+	Student   *Student `json:"student,omitempty"`
+}

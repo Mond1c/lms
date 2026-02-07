@@ -317,3 +317,21 @@ func (s *GiteaService) IsTeamMember(orgName, teamName, username string) (bool, e
 
 	return false, nil
 }
+
+func (s *GiteaService) CreateUser(username, email, password, fullName string) (*gitea.User, error) {
+	opts := gitea.CreateUserOption{
+		Username:           username,
+		Email:              email,
+		Password:           password,
+		FullName:           fullName,
+		MustChangePassword: gitea.OptionalBool(false),
+		SendNotify:         false,
+	}
+
+	user, _, err := s.client.AdminCreateUser(opts)
+	if err != nil {
+		return nil, err
+	}
+
+	return user, nil
+}

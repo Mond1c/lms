@@ -138,3 +138,41 @@ export const submissionAPI = {
   grade: (id: number, data: { score: number; feedback: string }) =>
     api.post<Submission>(`/submissions/${id}/grade`, data),
 };
+
+export interface StudentInvite {
+  id: number;
+  course_id: number;
+  full_name: string;
+  used: boolean;
+  used_at: string | null;
+  student_id: number | null;
+  student?: Student;
+}
+
+export const inviteAPI = {
+  importStudents: (courseSlug: string, students: string[]) =>
+    api.post(`/courses/${courseSlug}/students/import`, { students }),
+  importStudentsCSV: (courseSlug: string, file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.post(`/courses/${courseSlug}/students/import`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+  listInvites: (courseSlug: string) =>
+    api.get<StudentInvite[]>(`/courses/${courseSlug}/invites`),
+  getAvailableStudents: (inviteCode: string) =>
+    api.get<{
+      course_name: string;
+      course_slug: string;
+      students: StudentInvite[];
+    }>(`/join/${inviteCode}`),
+  register: (
+    inviteCode: string,
+    data: { invite_id: number; email: string; password: string }
+  ) =>
+    api.post<{ message: string; username: string; redirect: string }>(
+      `/join/${inviteCode}/register`,
+      data
+    ),
+};

@@ -29,5 +29,7 @@ func Migrate() error {
 		&models.Assignment{},
 		&models.Student{},
 		&models.Submission{},
+		&models.ReviewRequest{},
+		&models.StudentInvite{},
 	)
 }
