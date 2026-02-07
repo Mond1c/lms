@@ -4,9 +4,12 @@ import (
 	"log"
 
 	"github.com/Mond1c/gitea-classroom/config"
+	"github.com/Mond1c/gitea-classroom/internal/cache"
 	"github.com/Mond1c/gitea-classroom/internal/database"
 	"github.com/Mond1c/gitea-classroom/internal/handlers"
 	mw "github.com/Mond1c/gitea-classroom/internal/middleware"
+	"github.com/Mond1c/gitea-classroom/internal/services"
+	"github.com/Mond1c/gitea-classroom/internal/workers"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 )
@@ -25,6 +28,24 @@ func main() {
 		log.Fatal("Failed to migrate database:", err)
 	}
 
+	// Initialize Google Sheets service (optional)
+	var sheetsService *services.SheetsService
+	if cfg.GoogleCredentials != "" && cfg.GoogleSheetID != "" {
+		var err error
+		sheetsService, err = services.NewSheetsService(cfg.GoogleCredentials, cfg.GoogleSheetID)
+		if err != nil {
+			log.Printf("Warning: Failed to initialize Google Sheets service: %v", err)
+		} else {
+			log.Println("Google Sheets service initialized")
+		}
+	}
+
+	// Initialize review cache and worker
+	reviewCache := cache.NewReviewCache()
+	reviewWorker := workers.NewReviewWorker(reviewCache, sheetsService)
+	reviewWorker.Start()
+	defer reviewWorker.Stop()
+
 	e := echo.New()
 
 	e.Use(middleware.RequestLogger())
@@ -40,6 +61,8 @@ func main() {
 	assignmentHandler := handlers.NewAssignmentHandler(cfg)
 	studentHandler := handlers.NewStudentHandler(cfg)
 	submissionHandler := handlers.NewSubmissionHandler(cfg)
+	reviewHandler := handlers.NewReviewHandler(cfg, reviewCache, sheetsService)
+	webhookHandler := handlers.NewWebhookHandler(cfg, reviewCache, sheetsService)
 
 	e.GET("/api/health", func(c echo.Context) error {
 		return c.JSON(200, map[string]string{"status": "ok"})
@@ -47,6 +70,7 @@ func main() {
 	e.GET("/api/auth/login", authHandler.Login)
 	e.GET("/api/auth/callback", authHandler.Callback)
 	e.GET("/api/invite/:code", courseHandler.GetByInviteCode)
+	e.POST("/api/webhooks/gitea", webhookHandler.HandleGiteaWebhook)
 
 	api := e.Group("/api")
 	api.Use(mw.AuthMiddleware(cfg.JWTSecret))
@@ -74,6 +98,12 @@ func main() {
 	api.GET("/assignments/:id/submissions", submissionHandler.List)
 	api.GET("/submissions/:submissionId", submissionHandler.Get)
 	api.POST("/submissions/:submissionId/grade", submissionHandler.Grade)
+
+	// Review endpoints
+	api.POST("/submissions/:id/review/request", reviewHandler.RequestReview)
+	api.DELETE("/reviews/:id/cancel", reviewHandler.CancelReview)
+	api.GET("/submissions/:id/review/status", reviewHandler.GetReviewStatus)
+	api.POST("/reviews/:id/mark-reviewed", reviewHandler.MarkReviewed)
 
 	log.Printf("Server starting on port %s", cfg.Port)
 	e.Logger.Fatal(e.Start(":" + cfg.Port))

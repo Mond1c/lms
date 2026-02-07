@@ -54,12 +54,17 @@ func (w *ReviewWorker) Stop() {
 func (w *ReviewWorker) processExpiredReviews() {
 	expired := w.cache.GetExpired()
 
+	if len(expired) > 0 {
+		log.Printf("Found %d expired review requests", len(expired))
+	}
+
 	for _, pr := range expired {
+		log.Printf("Processing expired review request %d for submission %d", pr.ReviewRequestID, pr.SubmissionID)
 		if err := w.submitToSheets(pr.ReviewRequestID); err != nil {
 			log.Printf("Failed to submit review request %d to sheets: %v", pr.ReviewRequestID, err)
-			// Optionally re-add to cache for retry
 			continue
 		}
+		log.Printf("Successfully submitted review request %d to sheets", pr.ReviewRequestID)
 	}
 }
 

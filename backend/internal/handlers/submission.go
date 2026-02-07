@@ -81,7 +81,7 @@ func (h *SubmissionHandler) Accept(c echo.Context) error {
 				true,
 			)
 			if err != nil {
-				return echo.NewHTTPError(http.StatusInternalServerError, "failed to create repository from template")
+				return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("failed to create repository from template: %v", err))
 			}
 			repoURL = repo.HTMLURL
 		}
@@ -106,6 +106,20 @@ func (h *SubmissionHandler) Accept(c echo.Context) error {
 		if err == nil && team != nil {
 			giteaService.AddTeamRepository(team.ID, assignment.Course.OrgName, repoName)
 		}
+	}
+
+	// Create webhook for review system if configured
+	if h.cfg.WebhookBaseURL != "" && h.cfg.GiteaWebhookSecret != "" {
+		webhookURL := fmt.Sprintf("%s/api/webhooks/gitea", h.cfg.WebhookBaseURL)
+		go func() {
+			giteaService.CreateRepoWebhook(
+				assignment.Course.OrgName,
+				repoName,
+				webhookURL,
+				h.cfg.GiteaWebhookSecret,
+				[]string{"pull_request_comment", "pull_request_review"},
+			)
+		}()
 	}
 
 	go func() {
