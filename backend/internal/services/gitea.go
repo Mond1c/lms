@@ -68,6 +68,12 @@ func (s *GiteaService) CreateRepoFromTemplate(orgName, templateOwner, templateRe
 		Name:        newRepoName,
 		Private:     private,
 		Description: fmt.Sprintf("Assignment repository for %s", newRepoName),
+		GitContent:  true,
+		GitHooks:    true,
+		Webhooks:    true,
+		Topics:      true,
+		Avatar:      false,
+		Labels:      true,
 	}
 
 	repo, _, err := s.client.CreateRepoFromTemplate(templateOwner, templateRepo, opts)
@@ -223,7 +229,7 @@ func (s *GiteaService) GetOrCreateInstructorTeam(orgName, courseSlug string, yea
 		orgName,
 		teamName,
 		fmt.Sprintf("Instructors for %s (%d)", courseSlug, year),
-		gitea.AccessModeWrite,
+		gitea.AccessModeAdmin,
 	)
 	if err != nil {
 		return nil, err
@@ -234,4 +240,80 @@ func (s *GiteaService) GetOrCreateInstructorTeam(orgName, courseSlug string, yea
 	}
 
 	return team, nil
+}
+
+func (s *GiteaService) EnableBranchProtection(owner, repo, branch string) error {
+	opts := gitea.CreateBranchProtectionOption{
+		BranchName:                    branch,
+		EnablePush:                    false,
+		EnablePushWhitelist:           false,
+		PushWhitelistUsernames:        []string{},
+		PushWhitelistTeams:            []string{},
+		PushWhitelistDeployKeys:       false,
+		EnableMergeWhitelist:          false,
+		MergeWhitelistUsernames:       []string{},
+		MergeWhitelistTeams:           []string{},
+		EnableStatusCheck:             false,
+		StatusCheckContexts:           []string{},
+		RequiredApprovals:             0,
+		EnableApprovalsWhitelist:      false,
+		ApprovalsWhitelistUsernames:   []string{},
+		ApprovalsWhitelistTeams:       []string{},
+		BlockOnRejectedReviews:        false,
+		BlockOnOfficialReviewRequests: false,
+		BlockOnOutdatedBranch:         false,
+		DismissStaleApprovals:         false,
+		RequireSignedCommits:          false,
+		ProtectedFilePatterns:         "",
+		UnprotectedFilePatterns:       "",
+	}
+
+	_, _, err := s.client.CreateBranchProtection(owner, repo, opts)
+	return err
+}
+
+func (s *GiteaService) DisableBranchProtection(owner, repo, branch string) error {
+	_, err := s.client.DeleteBranchProtection(owner, repo, branch)
+	return err
+}
+
+func (s *GiteaService) CreateRepoWebhook(owner, repo, webhookURL, secret string, events []string) (*gitea.Hook, error) {
+	opts := gitea.CreateHookOption{
+		Type: gitea.HookTypeGitea,
+		Config: map[string]string{
+			"url":          webhookURL,
+			"content_type": "json",
+			"secret":       secret,
+		},
+		Events:       events,
+		BranchFilter: "*",
+		Active:       true,
+	}
+
+	hook, _, err := s.client.CreateRepoHook(owner, repo, opts)
+	return hook, err
+}
+
+func (s *GiteaService) IsTeamMember(orgName, teamName, username string) (bool, error) {
+	team, err := s.GetTeamByName(orgName, teamName)
+	if err != nil {
+		return false, err
+	}
+
+	if team == nil {
+		return false, nil
+	}
+
+	members, _, err := s.client.ListTeamMembers(team.ID, gitea.ListTeamMembersOptions{})
+	if err != nil {
+		return false, err
+	}
+
+	for _, member := range members {
+		if member.UserName == username {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }

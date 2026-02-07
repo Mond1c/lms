@@ -94,3 +94,27 @@ type Submission struct {
 	Feedback    string     `json:"feedback"`
 	SubmittedAt *time.Time `json:"submitted_at"`
 }
+
+// Review request statuses
+const (
+	ReviewStatusPending   = "pending"
+	ReviewStatusSubmitted = "submitted"
+	ReviewStatusReviewed  = "reviewed"
+	ReviewStatusCancelled = "cancelled"
+)
+
+type ReviewRequest struct {
+	ID        uint           `gorm:"primarykey" json:"id"`
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
+
+	SubmissionID uint       `json:"submission_id"`
+	Submission   Submission `json:"submission,omitempty"`
+
+	Status      string     `json:"status"`
+	RequestedAt time.Time  `json:"requested_at"`
+	SubmittedAt *time.Time `json:"submitted_at"`
+	ReviewedAt  *time.Time `json:"reviewed_at"`
+	SheetRowID  int        `json:"sheet_row_id"`
+}

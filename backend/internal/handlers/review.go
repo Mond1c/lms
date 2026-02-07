@@ -101,12 +101,6 @@ func (h *ReviewHandler) RequestReview(c echo.Context) error {
 	ttl := time.Duration(h.cfg.ReviewPendingMinutes) * time.Minute
 	h.cache.Add(reviewRequest.ID, submission.ID, ttl)
 
-	// Create webhook for this repo if webhook URL is configured
-	if h.cfg.WebhookBaseURL != "" && h.cfg.GiteaWebhookSecret != "" {
-		webhookURL := fmt.Sprintf("%s/webhooks/gitea", h.cfg.WebhookBaseURL)
-		giteaService.CreateRepoWebhook(orgName, repoName, webhookURL, h.cfg.GiteaWebhookSecret, []string{"pull_request_review"})
-	}
-
 	return c.JSON(http.StatusCreated, map[string]interface{}{
 		"review_request":   reviewRequest,
 		"cancel_deadline":  reviewRequest.RequestedAt.Add(ttl),

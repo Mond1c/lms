@@ -62,7 +62,7 @@ func (h *AssignmentHandler) Create(c echo.Context) error {
 
 	_, err = giteaService.GetOrCreateInstructorTeam(course.OrgName, course.Slug, req.AcademicYear, user.Username)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to create instructor team")
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to create instructor team: "+err.Error())
 	}
 
 	assignment := models.Assignment{
