@@ -205,7 +205,7 @@ func (h *InviteHandler) RegisterStudent(c echo.Context) error {
 
 	giteaService, err := services.NewGiteaService(h.cfg.GiteaURL, h.cfg.GiteaAdminToken)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to initialize Gitea service")
+		return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("failed to initialize Gitea service: %v", err))
 	}
 
 	// Create Gitea user

@@ -45,9 +45,11 @@ func (h *SubmissionHandler) Accept(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusForbidden, "not enrolled in this course")
 	}
 
+	// Check if submission already exists
 	var existingSubmission models.Submission
+	submissionExists := false
 	if err := database.DB.Where("assignment_id = ? AND student_id = ?", assignment.ID, student.ID).First(&existingSubmission).Error; err == nil {
-		return c.JSON(http.StatusOK, existingSubmission)
+		submissionExists = true
 	}
 
 	var instructor models.User
@@ -67,6 +69,13 @@ func (h *SubmissionHandler) Accept(c echo.Context) error {
 	repoName := fmt.Sprintf("%s-%s", slugify(assignment.Title), user.Username)
 	var repoURL string
 
+	// Check if repository already exists
+	if submissionExists && giteaService.RepositoryExists(assignment.Course.OrgName, repoName) {
+		// Repository exists, return existing submission
+		return c.JSON(http.StatusOK, existingSubmission)
+	}
+
+	// Repository doesn't exist (or submission doesn't exist), create it
 	if assignment.TemplateRepo != "" {
 		parts := strings.Split(assignment.TemplateRepo, "/")
 		if len(parts) >= 2 {
@@ -84,6 +93,13 @@ func (h *SubmissionHandler) Accept(c echo.Context) error {
 				return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("failed to create repository from template: %v", err))
 			}
 			repoURL = repo.HTMLURL
+
+			// Copy repository settings from template
+			go func() {
+				if err := giteaService.CopyRepoSettings(templateOwner, templateRepo, assignment.Course.OrgName, repoName); err != nil {
+					fmt.Printf("Warning: failed to copy repo settings: %v\n", err)
+				}
+			}()
 		}
 	} else {
 		repo, err := giteaService.CreateOrgRepo(
@@ -126,18 +142,35 @@ func (h *SubmissionHandler) Accept(c echo.Context) error {
 		giteaService.SetupFeedbackBranch(assignment.Course.OrgName, repoName)
 	}()
 
-	submission := models.Submission{
-		AssignmentID: uint(assignmentID),
-		StudentID:    student.ID,
-		RepoURL:      repoURL,
-		Status:       "in_progress",
-	}
+	// Create or update submission
+	if submissionExists {
+		// Update existing submission with new repo URL
+		existingSubmission.RepoURL = repoURL
+		existingSubmission.Status = "in_progress"
+		existingSubmission.Score = nil
+		existingSubmission.Feedback = ""
+		existingSubmission.SubmittedAt = nil
 
-	if err := database.DB.Create(&submission).Error; err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to create submission")
-	}
+		if err := database.DB.Save(&existingSubmission).Error; err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to update submission")
+		}
 
-	return c.JSON(http.StatusCreated, submission)
+		return c.JSON(http.StatusOK, existingSubmission)
+	} else {
+		// Create new submission
+		submission := models.Submission{
+			AssignmentID: uint(assignmentID),
+			StudentID:    student.ID,
+			RepoURL:      repoURL,
+			Status:       "in_progress",
+		}
+
+		if err := database.DB.Create(&submission).Error; err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to create submission")
+		}
+
+		return c.JSON(http.StatusCreated, submission)
+	}
 }
 
 func (h *SubmissionHandler) List(c echo.Context) error {

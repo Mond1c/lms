@@ -335,3 +335,92 @@ func (s *GiteaService) CreateUser(username, email, password, fullName string) (*
 
 	return user, nil
 }
+
+// Check if repository exists
+func (s *GiteaService) RepositoryExists(owner, repo string) bool {
+	_, _, err := s.client.GetRepo(owner, repo)
+	return err == nil
+}
+
+// Get repository
+func (s *GiteaService) GetRepository(owner, repo string) (*gitea.Repository, error) {
+	repository, _, err := s.client.GetRepo(owner, repo)
+	return repository, err
+}
+
+// Copy repository settings from template to new repo
+func (s *GiteaService) CopyRepoSettings(templateOwner, templateRepo, targetOwner, targetRepo string) error {
+	// Get template repository
+	template, err := s.GetRepository(templateOwner, templateRepo)
+	if err != nil {
+		return fmt.Errorf("failed to get template repo: %w", err)
+	}
+
+	// Get target repository
+	target, err := s.GetRepository(targetOwner, targetRepo)
+	if err != nil {
+		return fmt.Errorf("failed to get target repo: %w", err)
+	}
+
+	// Update repository settings
+	opts := gitea.EditRepoOption{
+		DefaultBranch:     &template.DefaultBranch,
+		HasIssues:         &template.HasIssues,
+		HasWiki:           &template.HasWiki,
+		HasPullRequests:   &template.HasPullRequests,
+		HasProjects:       &template.HasProjects,
+		AllowMerge:        &template.AllowMerge,
+		AllowRebase:       &template.AllowRebase,
+		AllowRebaseMerge:  &template.AllowRebaseMerge,
+		AllowSquash:       &template.AllowSquash,
+		DefaultMergeStyle: &template.DefaultMergeStyle,
+	}
+
+	_, _, err = s.client.EditRepo(targetOwner, targetRepo, opts)
+	if err != nil {
+		return fmt.Errorf("failed to update repo settings: %w", err)
+	}
+
+	// Copy branch protections from default branch
+	if template.DefaultBranch != "" {
+		protections, _, err := s.client.ListBranchProtections(templateOwner, templateRepo, gitea.ListBranchProtectionsOptions{})
+		if err == nil && len(protections) > 0 {
+			for _, protection := range protections {
+				if protection.BranchName == template.DefaultBranch || protection.BranchName == target.DefaultBranch {
+					s.copyBranchProtection(protection, targetOwner, targetRepo, target.DefaultBranch)
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+// Copy branch protection settings
+func (s *GiteaService) copyBranchProtection(source *gitea.BranchProtection, targetOwner, targetRepo, targetBranch string) error {
+	opts := gitea.CreateBranchProtectionOption{
+		BranchName:                    targetBranch,
+		EnablePush:                    source.EnablePush,
+		EnablePushWhitelist:           source.EnablePushWhitelist,
+		PushWhitelistUsernames:        source.PushWhitelistUsernames,
+		PushWhitelistTeams:            source.PushWhitelistTeams,
+		EnableMergeWhitelist:          source.EnableMergeWhitelist,
+		MergeWhitelistUsernames:       source.MergeWhitelistUsernames,
+		MergeWhitelistTeams:           source.MergeWhitelistTeams,
+		EnableStatusCheck:             source.EnableStatusCheck,
+		StatusCheckContexts:           source.StatusCheckContexts,
+		RequiredApprovals:             source.RequiredApprovals,
+		EnableApprovalsWhitelist:      source.EnableApprovalsWhitelist,
+		ApprovalsWhitelistUsernames:   source.ApprovalsWhitelistUsernames,
+		ApprovalsWhitelistTeams:       source.ApprovalsWhitelistTeams,
+		BlockOnRejectedReviews:        source.BlockOnRejectedReviews,
+		BlockOnOfficialReviewRequests: source.BlockOnOfficialReviewRequests,
+		DismissStaleApprovals:         source.DismissStaleApprovals,
+		RequireSignedCommits:          source.RequireSignedCommits,
+		ProtectedFilePatterns:         source.ProtectedFilePatterns,
+		UnprotectedFilePatterns:       source.UnprotectedFilePatterns,
+	}
+
+	_, _, err := s.client.CreateBranchProtection(targetOwner, targetRepo, opts)
+	return err
+}
