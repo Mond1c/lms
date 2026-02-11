@@ -66,7 +66,13 @@ func (h *SubmissionHandler) Accept(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to initialize gitea service")
 	}
 
-	repoName := fmt.Sprintf("%s-%s", slugify(assignment.Title), user.Username)
+	// Generate repo name: {course-slug}-{year}-{assignment-title}-{username}
+	year := assignment.AcademicYear % 100 // Get last 2 digits (2026 -> 26)
+	repoName := fmt.Sprintf("%s-%d-%s-%s",
+		assignment.Course.Slug,
+		year,
+		slugify(assignment.Title),
+		user.Username)
 	var repoURL string
 
 	// Check if repository already exists
