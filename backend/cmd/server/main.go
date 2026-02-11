@@ -1,9 +1,12 @@
 package main
 
 import (
+	"io/fs"
 	"log"
+	"net/http"
 
 	"github.com/Mond1c/gitea-classroom/config"
+	"github.com/Mond1c/gitea-classroom/frontend"
 	"github.com/Mond1c/gitea-classroom/internal/cache"
 	"github.com/Mond1c/gitea-classroom/internal/database"
 	"github.com/Mond1c/gitea-classroom/internal/handlers"
@@ -113,6 +116,26 @@ func main() {
 	api.DELETE("/reviews/:id/cancel", reviewHandler.CancelReview)
 	api.GET("/submissions/:id/review/status", reviewHandler.GetReviewStatus)
 	api.POST("/reviews/:id/mark-reviewed", reviewHandler.MarkReviewed)
+
+	// Serve embedded frontend (SPA)
+	distFS, err := fs.Sub(frontend.DistFS, "dist")
+	if err != nil {
+		log.Fatal("Failed to get frontend dist fs:", err)
+	}
+	fileServer := http.FileServer(http.FS(distFS))
+	e.GET("/*", echo.WrapHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Try serving the file directly
+		f, err := distFS.(fs.ReadFileFS).ReadFile(r.URL.Path[1:])
+		if err != nil {
+			// File not found — serve index.html for SPA routing
+			index, _ := distFS.(fs.ReadFileFS).ReadFile("index.html")
+			w.Header().Set("Content-Type", "text/html")
+			w.Write(index)
+			return
+		}
+		_ = f
+		fileServer.ServeHTTP(w, r)
+	})))
 
 	log.Printf("Server starting on port %s", cfg.Port)
 	e.Logger.Fatal(e.Start(":" + cfg.Port))
