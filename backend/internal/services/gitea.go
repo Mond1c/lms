@@ -364,16 +364,26 @@ func (s *GiteaService) CopyRepoSettings(templateOwner, templateRepo, targetOwner
 
 	// Update repository settings
 	opts := gitea.EditRepoOption{
-		DefaultBranch:     &template.DefaultBranch,
-		HasIssues:         &template.HasIssues,
-		HasWiki:           &template.HasWiki,
-		HasPullRequests:   &template.HasPullRequests,
-		HasProjects:       &template.HasProjects,
-		AllowMerge:        &template.AllowMerge,
-		AllowRebase:       &template.AllowRebase,
-		AllowRebaseMerge:  &template.AllowRebaseMerge,
-		AllowSquash:       &template.AllowSquash,
-		DefaultMergeStyle: &template.DefaultMergeStyle,
+		// Basic settings
+		DefaultBranch: &template.DefaultBranch,
+
+		// Features
+		HasIssues:       &template.HasIssues,
+		HasWiki:         &template.HasWiki,
+		HasPullRequests: &template.HasPullRequests,
+		HasProjects:     &template.HasProjects,
+		HasReleases:     &template.HasReleases,
+		HasPackages:     &template.HasPackages,
+		HasActions:      &template.HasActions,
+
+		// Pull Request Merge settings
+		AllowMerge:                    &template.AllowMerge,
+		AllowRebase:                   &template.AllowRebase,
+		AllowRebaseMerge:              &template.AllowRebaseMerge,
+		AllowSquash:                   &template.AllowSquash,
+		DefaultMergeStyle:             &template.DefaultMergeStyle,
+		DefaultDeleteBranchAfterMerge: &template.DefaultDeleteBranchAfterMerge,
+		AllowFastForwardOnlyMerge:     &template.AllowFastForwardOnlyMerge,
 	}
 
 	_, _, err = s.client.EditRepo(targetOwner, targetRepo, opts)
