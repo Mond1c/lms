@@ -52,18 +52,14 @@ func (h *SubmissionHandler) Accept(c echo.Context) error {
 		submissionExists = true
 	}
 
-	var instructor models.User
-	err = database.DB.
-		Joins("JOIN course_instructors ON course_instructors.user_id = users.id").
-		Where("course_instructors.course_id = ?", assignment.CourseID).
-		First(&instructor).Error
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "no instructor found for course")
+	// Use admin token for repository creation
+	if h.cfg.GiteaAdminToken == "" {
+		return echo.NewHTTPError(http.StatusInternalServerError, "Gitea admin token not configured")
 	}
 
-	giteaService, err := services.NewGiteaService(h.cfg.GiteaURL, instructor.AccessToken)
+	giteaService, err := services.NewGiteaService(h.cfg.GiteaURL, h.cfg.GiteaAdminToken)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to initialize gitea service")
+		return echo.NewHTTPError(http.StatusInternalServerError, fmt.Sprintf("failed to initialize gitea service: %v", err))
 	}
 
 	// Generate repo name: {course-slug}-{assignment-title}-{username}
