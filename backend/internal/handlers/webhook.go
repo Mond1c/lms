@@ -103,7 +103,7 @@ type GiteaPullRequestReviewPayload struct {
 }
 
 type GiteaIssueCommentPayload struct {
-	Action string `json:"action"` // "created", "edited", "deleted"
+	Action string `json:"action"`  // "created", "edited", "deleted"
 	IsPull bool   `json:"is_pull"` // Top-level field indicating if this is a PR comment
 	Issue  struct {
 		ID     int64  `json:"id"`
@@ -165,6 +165,12 @@ func (h *WebhookHandler) HandleGiteaWebhook(c echo.Context) error {
 		return h.handlePullRequest(c, body)
 	case "pull_request_review":
 		return h.handlePullRequestReview(c, body)
+	case "pull_request_rejected":
+		// Restore access when instructor requests changes
+		return h.handleReviewed(c, body)
+	case "pull_request_accepted":
+		// Restore access when instructor approves
+		return h.handleReviewed(c, body)
 	case "issue_comment":
 		return h.handleIssueComment(c, body)
 	default:
