@@ -10,6 +10,7 @@ import (
 	"github.com/Mond1c/gitea-classroom/internal/cache"
 	"github.com/Mond1c/gitea-classroom/internal/database"
 	"github.com/Mond1c/gitea-classroom/internal/handlers"
+	"github.com/Mond1c/gitea-classroom/internal/logger"
 	mw "github.com/Mond1c/gitea-classroom/internal/middleware"
 	"github.com/Mond1c/gitea-classroom/internal/services"
 	"github.com/Mond1c/gitea-classroom/internal/workers"
@@ -18,6 +19,11 @@ import (
 )
 
 func main() {
+	// Initialize logger with rotation (before anything else)
+	if err := logger.SetupLogger("logs"); err != nil {
+		log.Fatal("Failed to setup logger:", err)
+	}
+
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatal("Failed to load config:", err)
