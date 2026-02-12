@@ -478,6 +478,8 @@ func (h *WebhookHandler) handleIssueComment(c echo.Context, body []byte) error {
 		return h.handleUnreviewCommand(c, payload)
 	case "/review_now":
 		return h.handleReviewNowCommand(c, payload)
+	case "/force_unreview":
+		return h.handleForceUnreviewCommand(c, payload)
 	default:
 		return c.JSON(http.StatusOK, map[string]string{"status": "not_review_command"})
 	}
@@ -690,6 +692,85 @@ func (h *WebhookHandler) handleReviewNowCommand(c echo.Context, payload GiteaIss
 		"status":            "review_submitted_immediately",
 		"review_request_id": reviewRequest.ID,
 		"message":           "Review request submitted immediately to Google Sheets",
+	})
+}
+
+// Handle /force_unreview command - admin command to cancel any review request
+func (h *WebhookHandler) handleForceUnreviewCommand(c echo.Context, payload GiteaIssueCommentPayload) error {
+	// Find submission by repo URL
+	repoURL := payload.Repository.HTMLURL
+	var submission models.Submission
+	if err := database.DB.Preload("Student").Preload("Assignment.Course").Where("repo_url = ?", repoURL).First(&submission).Error; err != nil {
+		return c.JSON(http.StatusOK, map[string]string{"status": "submission_not_found"})
+	}
+
+	// Check if commenter is an instructor for this course
+	commenterUsername := payload.Comment.User.Username
+	if commenterUsername == "" {
+		commenterUsername = payload.Comment.User.Login
+	}
+
+	// Get commenter user
+	var commenter models.User
+	if err := database.DB.Where("username = ?", commenterUsername).First(&commenter).Error; err != nil {
+		return c.JSON(http.StatusOK, map[string]string{"status": "commenter_not_found"})
+	}
+
+	// Check if commenter is instructor for this course
+	if !isInstructor(commenter.ID, submission.Assignment.CourseID) {
+		return c.JSON(http.StatusOK, map[string]string{
+			"status":  "forbidden",
+			"message": "Only instructors can use /force_unreview",
+		})
+	}
+
+	// Find any active review request (pending, submitted, or even reviewed)
+	var reviewRequest models.ReviewRequest
+	err := database.DB.Where("submission_id = ? AND status IN ?", submission.ID,
+		[]string{models.ReviewStatusPending, models.ReviewStatusSubmitted, models.ReviewStatusReviewed}).
+		Order("created_at DESC").First(&reviewRequest).Error
+	if err != nil {
+		return c.JSON(http.StatusOK, map[string]string{"status": "no_review_request"})
+	}
+
+	// Remove from cache if exists
+	h.cache.Remove(reviewRequest.ID)
+
+	// Update review request status
+	reviewRequest.Status = models.ReviewStatusCancelled
+	if err := database.DB.Save(&reviewRequest).Error; err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to cancel review request")
+	}
+
+	// Restore write access using admin token
+	if h.cfg.GiteaAdminToken != "" {
+		giteaService, err := services.NewGiteaService(h.cfg.GiteaURL, h.cfg.GiteaAdminToken)
+		if err == nil {
+			repoName := extractRepoName(submission.RepoURL)
+			orgName := submission.Assignment.Course.OrgName
+
+			if err := giteaService.AddCollaborator(orgName, repoName, submission.Student.Username, gitea.AccessModeWrite); err != nil {
+				log.Printf("Warning: failed to restore student write access: %v", err)
+			} else {
+				log.Printf("Restored write access for student %s on %s/%s (forced by instructor %s)",
+					submission.Student.Username, orgName, repoName, commenterUsername)
+			}
+		}
+	}
+
+	// Remove from Google Sheets if it was submitted
+	if h.sheets != nil && reviewRequest.SheetRowID > 0 {
+		if err := h.sheets.DeleteRow(reviewRequest.SheetRowID); err != nil {
+			log.Printf("Warning: failed to remove from Google Sheets: %v", err)
+		}
+	}
+
+	log.Printf("Review request force-cancelled by instructor %s: ID=%d, Submission=%d, Status was=%s",
+		commenterUsername, reviewRequest.ID, submission.ID, reviewRequest.Status)
+
+	return c.JSON(http.StatusOK, map[string]string{
+		"status":  "force_cancelled",
+		"message": fmt.Sprintf("Review request cancelled by instructor %s, write access restored", commenterUsername),
 	})
 }
 
