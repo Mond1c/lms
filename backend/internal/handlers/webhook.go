@@ -168,7 +168,7 @@ func (h *WebhookHandler) HandleGiteaWebhook(c echo.Context) error {
 	case "pull_request_rejected":
 		// Restore access when instructor requests changes
 		return h.handleReviewed(c, body)
-	case "pull_request_accepted":
+	case "pull_request_approved":
 		// Restore access when instructor approves
 		return h.handleReviewed(c, body)
 	case "issue_comment":
