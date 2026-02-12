@@ -172,21 +172,29 @@ func (h *WebhookHandler) HandleGiteaWebhook(c echo.Context) error {
 	}
 }
 
-// Handle pull_request events (review_requested)
+// Handle pull_request events (review_requested, reviewed)
 func (h *WebhookHandler) handlePullRequest(c echo.Context, body []byte) error {
 	var payload GiteaPullRequestPayload
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid payload")
 	}
 
-	// Only process review_requested action
-	if payload.Action != "review_requested" {
-		return echo.NewHTTPError(http.StatusOK, map[string]string{"status": "ignored"})
+	// Handle different actions
+	if payload.Action == "review_requested" {
+		return h.handleReviewRequested(c, payload)
+	} else if payload.Action == "reviewed" {
+		return h.handleReviewed(c, body)
 	}
+
+	return c.JSON(http.StatusOK, map[string]string{"status": "ignored"})
+}
+
+// Handle review_requested action
+func (h *WebhookHandler) handleReviewRequested(c echo.Context, payload GiteaPullRequestPayload) error {
 
 	// Only process Feedback PR
 	if payload.PullRequest.Title != "Feedback" {
-		return echo.NewHTTPError(http.StatusOK, map[string]string{"status": "ignored"})
+		return c.JSON(http.StatusOK, map[string]string{"status": "ignored"})
 	}
 
 	// Find submission by repo URL
@@ -360,6 +368,79 @@ func (h *WebhookHandler) handlePullRequestReview(c echo.Context, body []byte) er
 	})
 }
 
+// Handle "reviewed" action from pull_request event (when using Request changes/Approve buttons)
+func (h *WebhookHandler) handleReviewed(c echo.Context, body []byte) error {
+	// Parse as generic map to get review type
+	var payload map[string]interface{}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid payload")
+	}
+
+	// Extract repository URL
+	repository, ok := payload["repository"].(map[string]interface{})
+	if !ok {
+		return c.JSON(http.StatusOK, map[string]string{"status": "invalid_repository"})
+	}
+
+	repoURL, ok := repository["html_url"].(string)
+	if !ok {
+		return c.JSON(http.StatusOK, map[string]string{"status": "invalid_repo_url"})
+	}
+
+	// Find submission by repo URL
+	var submission models.Submission
+	if err := database.DB.Preload("Student").Preload("Assignment.Course").Where("repo_url = ?", repoURL).First(&submission).Error; err != nil {
+		return c.JSON(http.StatusOK, map[string]string{"status": "submission_not_found"})
+	}
+
+	// Find active review request for this submission
+	var reviewRequest models.ReviewRequest
+	err := database.DB.Where("submission_id = ? AND status IN ?", submission.ID,
+		[]string{models.ReviewStatusPending, models.ReviewStatusSubmitted}).
+		Order("created_at DESC").First(&reviewRequest).Error
+	if err != nil {
+		// No active review request
+		return c.JSON(http.StatusOK, map[string]string{"status": "no_active_review"})
+	}
+
+	// Restore student's write access using admin token
+	repoName := extractRepoName(submission.RepoURL)
+	orgName := submission.Assignment.Course.OrgName
+
+	if h.cfg.GiteaAdminToken != "" {
+		adminService, err := services.NewGiteaService(h.cfg.GiteaURL, h.cfg.GiteaAdminToken)
+		if err == nil {
+			// Restore Write access to student
+			if err := adminService.AddCollaborator(orgName, repoName, submission.Student.Username, gitea.AccessModeWrite); err != nil {
+				log.Printf("Warning: failed to restore student write access: %v", err)
+			} else {
+				log.Printf("Restored write access for student %s on %s/%s", submission.Student.Username, orgName, repoName)
+			}
+		}
+	}
+
+	// Update review request status
+	now := time.Now()
+	reviewRequest.Status = models.ReviewStatusReviewed
+	reviewRequest.ReviewedAt = &now
+
+	if err := database.DB.Save(&reviewRequest).Error; err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to update review request")
+	}
+
+	// Update Google Sheets status
+	if h.sheets != nil && reviewRequest.SheetRowID > 0 {
+		h.sheets.UpdateRowStatus(reviewRequest.SheetRowID, "Проверено")
+	}
+
+	log.Printf("Review completed via 'reviewed' action: ReviewRequest=%d, Submission=%d", reviewRequest.ID, submission.ID)
+
+	return c.JSON(http.StatusOK, map[string]string{
+		"status":            "processed",
+		"review_request_id": fmt.Sprintf("%d", reviewRequest.ID),
+	})
+}
+
 // Handle issue_comment events (magic command /review)
 func (h *WebhookHandler) handleIssueComment(c echo.Context, body []byte) error {
 	var payload GiteaIssueCommentPayload
@@ -388,18 +469,28 @@ func (h *WebhookHandler) handleIssueComment(c echo.Context, body []byte) error {
 
 	// Check if comment contains magic command
 	commentBody := strings.TrimSpace(payload.Comment.Body)
-	if commentBody != "/review" && commentBody != "@review" {
+
+	// Handle different commands
+	switch commentBody {
+	case "/review", "@review":
+		return h.handleReviewCommand(c, payload)
+	case "/unreview":
+		return h.handleUnreviewCommand(c, payload)
+	case "/review_now":
+		return h.handleReviewNowCommand(c, payload)
+	default:
 		return c.JSON(http.StatusOK, map[string]string{"status": "not_review_command"})
 	}
-	log.Print(5)
+}
 
+// Handle /review or @review command
+func (h *WebhookHandler) handleReviewCommand(c echo.Context, payload GiteaIssueCommentPayload) error {
 	// Find submission by repo URL
 	repoURL := payload.Repository.HTMLURL
 	var submission models.Submission
 	if err := database.DB.Preload("Student").Preload("Assignment.Course").Where("repo_url = ?", repoURL).First(&submission).Error; err != nil {
 		return c.JSON(http.StatusOK, map[string]string{"status": "submission_not_found"})
 	}
-	log.Print(6)
 
 	// Check if commenter is the student who owns this submission
 	commenterUsername := payload.Comment.User.Username
@@ -410,7 +501,6 @@ func (h *WebhookHandler) handleIssueComment(c echo.Context, body []byte) error {
 	if submission.Student.Username != commenterUsername {
 		return c.JSON(http.StatusOK, map[string]string{"status": "not_submission_owner"})
 	}
-	log.Print(7)
 
 	// Check for existing active review request
 	var existingRequest models.ReviewRequest
@@ -419,7 +509,6 @@ func (h *WebhookHandler) handleIssueComment(c echo.Context, body []byte) error {
 	if err == nil {
 		return c.JSON(http.StatusOK, map[string]string{"status": "review_already_active"})
 	}
-	log.Print(8)
 
 	// Use admin token to manage repository access
 	if h.cfg.GiteaAdminToken != "" {
@@ -436,7 +525,6 @@ func (h *WebhookHandler) handleIssueComment(c echo.Context, body []byte) error {
 			}
 		}
 	}
-	log.Print(9)
 
 	// Create review request
 	reviewRequest := models.ReviewRequest{
@@ -448,19 +536,160 @@ func (h *WebhookHandler) handleIssueComment(c echo.Context, body []byte) error {
 	if err := database.DB.Create(&reviewRequest).Error; err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to create review request")
 	}
-	log.Print(11)
 
 	// Add to cache with TTL
 	ttl := time.Duration(h.cfg.ReviewPendingMinutes) * time.Minute
 	h.cache.Add(reviewRequest.ID, submission.ID, ttl)
 
-	fmt.Printf("Review request created: ID=%d, Submission=%d, TTL=%v minutes, Expires at=%v\n",
+	log.Printf("Review request created: ID=%d, Submission=%d, TTL=%v minutes, Expires at=%v\n",
 		reviewRequest.ID, submission.ID, h.cfg.ReviewPendingMinutes, reviewRequest.RequestedAt.Add(ttl))
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"status":            "review_requested",
 		"review_request_id": reviewRequest.ID,
 		"cancel_deadline":   reviewRequest.RequestedAt.Add(ttl),
+	})
+}
+
+// Handle /unreview command - cancel review while it's in cache
+func (h *WebhookHandler) handleUnreviewCommand(c echo.Context, payload GiteaIssueCommentPayload) error {
+	// Find submission by repo URL
+	repoURL := payload.Repository.HTMLURL
+	var submission models.Submission
+	if err := database.DB.Preload("Student").Preload("Assignment.Course").Where("repo_url = ?", repoURL).First(&submission).Error; err != nil {
+		return c.JSON(http.StatusOK, map[string]string{"status": "submission_not_found"})
+	}
+
+	// Check if commenter is the student who owns this submission
+	commenterUsername := payload.Comment.User.Username
+	if commenterUsername == "" {
+		commenterUsername = payload.Comment.User.Login
+	}
+
+	if submission.Student.Username != commenterUsername {
+		return c.JSON(http.StatusOK, map[string]string{"status": "not_submission_owner"})
+	}
+
+	// Find pending review request
+	var reviewRequest models.ReviewRequest
+	err := database.DB.Where("submission_id = ? AND status = ?", submission.ID, models.ReviewStatusPending).
+		First(&reviewRequest).Error
+	if err != nil {
+		return c.JSON(http.StatusOK, map[string]string{"status": "no_pending_review"})
+	}
+
+	// Check if still in cache (within cancel period)
+	if !h.cache.Exists(reviewRequest.ID) {
+		return c.JSON(http.StatusOK, map[string]string{"status": "review_already_submitted", "message": "Review has been submitted to Google Sheets and cannot be cancelled"})
+	}
+
+	// Remove from cache
+	h.cache.Remove(reviewRequest.ID)
+
+	// Update review request status
+	reviewRequest.Status = models.ReviewStatusCancelled
+	if err := database.DB.Save(&reviewRequest).Error; err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to cancel review request")
+	}
+
+	// Restore write access
+	if h.cfg.GiteaAdminToken != "" {
+		giteaService, err := services.NewGiteaService(h.cfg.GiteaURL, h.cfg.GiteaAdminToken)
+		if err == nil {
+			repoName := extractRepoName(submission.RepoURL)
+			orgName := submission.Assignment.Course.OrgName
+
+			if err := giteaService.AddCollaborator(orgName, repoName, submission.Student.Username, gitea.AccessModeWrite); err != nil {
+				log.Printf("Warning: failed to restore student write access: %v", err)
+			} else {
+				log.Printf("Restored write access for student %s on %s/%s", submission.Student.Username, orgName, repoName)
+			}
+		}
+	}
+
+	log.Printf("Review request cancelled: ID=%d, Submission=%d", reviewRequest.ID, submission.ID)
+
+	return c.JSON(http.StatusOK, map[string]string{
+		"status":  "review_cancelled",
+		"message": "Review request cancelled, write access restored",
+	})
+}
+
+// Handle /review_now command - immediately submit to Google Sheets
+func (h *WebhookHandler) handleReviewNowCommand(c echo.Context, payload GiteaIssueCommentPayload) error {
+	// Find submission by repo URL
+	repoURL := payload.Repository.HTMLURL
+	var submission models.Submission
+	if err := database.DB.Preload("Student").Preload("Assignment.Course").Where("repo_url = ?", repoURL).First(&submission).Error; err != nil {
+		return c.JSON(http.StatusOK, map[string]string{"status": "submission_not_found"})
+	}
+
+	// Check if commenter is the student who owns this submission
+	commenterUsername := payload.Comment.User.Username
+	if commenterUsername == "" {
+		commenterUsername = payload.Comment.User.Login
+	}
+
+	if submission.Student.Username != commenterUsername {
+		return c.JSON(http.StatusOK, map[string]string{"status": "not_submission_owner"})
+	}
+
+	// Check for existing active review request
+	var existingRequest models.ReviewRequest
+	err := database.DB.Where("submission_id = ? AND status IN ?", submission.ID,
+		[]string{models.ReviewStatusPending, models.ReviewStatusSubmitted}).First(&existingRequest).Error
+	if err == nil {
+		return c.JSON(http.StatusOK, map[string]string{"status": "review_already_active"})
+	}
+
+	// Use admin token to block repository immediately
+	if h.cfg.GiteaAdminToken != "" {
+		giteaService, err := services.NewGiteaService(h.cfg.GiteaURL, h.cfg.GiteaAdminToken)
+		if err == nil {
+			repoName := extractRepoName(submission.RepoURL)
+			orgName := submission.Assignment.Course.OrgName
+
+			// Change student's access from Write to Read immediately
+			if err := giteaService.AddCollaborator(orgName, repoName, submission.Student.Username, gitea.AccessModeRead); err != nil {
+				log.Printf("Warning: failed to change student access to read-only: %v", err)
+			} else {
+				log.Printf("Changed student %s access to read-only on %s/%s (immediate)", submission.Student.Username, orgName, repoName)
+			}
+		}
+	}
+
+	// Create review request and immediately submit to sheets
+	now := time.Now()
+	reviewRequest := models.ReviewRequest{
+		SubmissionID: submission.ID,
+		Status:       models.ReviewStatusSubmitted,
+		RequestedAt:  now,
+		SubmittedAt:  &now,
+	}
+
+	if err := database.DB.Create(&reviewRequest).Error; err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to create review request")
+	}
+
+	// Submit to Google Sheets immediately if available
+	if h.sheets != nil {
+		studentInfo := fmt.Sprintf("%s (%s)", submission.Student.FullName, submission.Student.Username)
+		repoURL := submission.RepoURL
+		rowID, err := h.sheets.AppendReviewRequest(studentInfo, repoURL, now)
+		if err != nil {
+			log.Printf("Warning: failed to add review to Google Sheets: %v", err)
+		} else {
+			reviewRequest.SheetRowID = rowID
+			database.DB.Save(&reviewRequest)
+			log.Printf("Review request immediately submitted to Google Sheets: ID=%d, Submission=%d, RowID=%d",
+				reviewRequest.ID, submission.ID, rowID)
+		}
+	}
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"status":            "review_submitted_immediately",
+		"review_request_id": reviewRequest.ID,
+		"message":           "Review request submitted immediately to Google Sheets",
 	})
 }
 
