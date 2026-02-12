@@ -26,7 +26,7 @@ func NewSheetsService(credentialsFile, sheetID string) (*SheetsService, error) {
 	return &SheetsService{
 		srv:       srv,
 		sheetID:   sheetID,
-		sheetName: "Sheet1", // default sheet name
+		sheetName: "ReviewRequests", // default sheet name
 	}, nil
 }
 
