@@ -48,7 +48,7 @@ func (s *SheetsService) AppendReviewRequest(fullName, repoURL string, requestedA
 
 	resp, err := s.srv.Spreadsheets.Values.Append(
 		s.sheetID,
-		s.sheetName,
+		s.sheetName+"!A:D",
 		valueRange,
 	).ValueInputOption("USER_ENTERED").InsertDataOption("INSERT_ROWS").Context(ctx).Do()
 
