@@ -326,9 +326,6 @@ func (s *GiteaService) CreateUser(username, email, password, fullName string) (*
 		FullName:           fullName,
 		MustChangePassword: gitea.OptionalBool(false),
 		SendNotify:         false,
-		// Restrict user capabilities
-		MaxRepoCreation: gitea.OptionalInt64(0), // Cannot create repos
-		Restricted:      gitea.OptionalBool(false),
 	}
 
 	user, _, err := s.client.AdminCreateUser(opts)
@@ -337,16 +334,6 @@ func (s *GiteaService) CreateUser(username, email, password, fullName string) (*
 	}
 
 	return user, nil
-}
-
-// UpdateUserRepoLimit updates the maximum number of repositories a user can create
-func (s *GiteaService) UpdateUserRepoLimit(username string, maxRepos int64) error {
-	opts := gitea.EditUserOption{
-		MaxRepoCreation: gitea.OptionalInt64(maxRepos),
-	}
-
-	_, err := s.client.AdminEditUser(username, opts)
-	return err
 }
 
 // Check if repository exists
